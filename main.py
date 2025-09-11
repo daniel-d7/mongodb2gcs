@@ -196,6 +196,16 @@ def main():
         logger.info(f"Failed chunks: {failed_chunks}")
         logger.info(f"Processing rate: {successful_chunks/total_time:.2f} chunks/second")
         
+        # Export schema information
+        if successful_chunks > 0:
+            try:
+                # Create a GCS uploader to access schema info
+                gcs_uploader = GCSUploader(config)
+                schema_info = gcs_uploader.export_schema_info()
+                logger.info(f"Exported schema with {schema_info['total_fields']} fields")
+            except Exception as e:
+                logger.error(f"Failed to export schema: {e}")
+        
         # Get final progress stats
         stats = progress_tracker.get_progress()
         logger.info(f"Final progress: {stats}")
