@@ -6,11 +6,13 @@ GCS Uploader - Handles file uploads to Google Cloud Storage
 import logging
 import time
 import json
+import os
 from typing import List, Dict, Any
 from pathlib import Path
 
 import pandas as pd
 from google.cloud import storage
+from google.oauth2 import service_account
 
 from .progress import Config
 
@@ -20,13 +22,77 @@ class GCSUploader:
     
     def __init__(self, config: Config):
         self.config = config
-        self.client = storage.Client(project=config.gcp_project_id)
-        self.bucket = self.client.bucket(config.gcs_bucket)
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize GCS client with service account authentication
+        self.client = self._create_authenticated_client(config)
+        self.bucket = self.client.bucket(config.gcs_bucket)
         
         # Schema consistency tracking
         self.global_schema = {}
         self.schema_lock = None  # Will be set if using multiprocessing
+    
+    def _create_authenticated_client(self, config: Config) -> storage.Client:
+        """Create GCS client with service account authentication"""
+        # Look for token.json in the main directory
+        token_path = Path("token.json")
+        
+        if not token_path.exists():
+            # Also check in the token folder
+            token_folder_path = Path("token") / "token.json"
+            if token_folder_path.exists():
+                token_path = token_folder_path
+            else:
+                self.logger.error("token.json not found in main directory or token/ folder")
+                raise FileNotFoundError(
+                    "Service account key file 'token.json' not found. "
+                    "Please place it in the main directory or token/ folder."
+                )
+        
+        try:
+            # Load service account credentials
+            self.logger.info(f"Loading service account credentials from: {token_path}")
+            credentials = service_account.Credentials.from_service_account_file(
+                str(token_path),
+                scopes=[
+                    'https://www.googleapis.com/auth/cloud-platform',
+                    'https://www.googleapis.com/auth/devstorage.read_write'
+                ]
+            )
+            
+            # Create client with credentials
+            client = storage.Client(
+                project=config.gcp_project_id,
+                credentials=credentials
+            )
+            
+            # Test authentication by listing buckets
+            try:
+                buckets = list(client.list_buckets(max_results=1))
+                self.logger.info("Successfully authenticated with Google Cloud Storage")
+                
+                # Test specific bucket access
+                try:
+                    bucket = client.bucket(config.gcs_bucket)
+                    bucket.reload()  # This will fail if bucket doesn't exist or no access
+                    self.logger.info(f"Successfully verified access to bucket: {config.gcs_bucket}")
+                except Exception as bucket_error:
+                    self.logger.error(f"Cannot access bucket '{config.gcs_bucket}': {bucket_error}")
+                    self.logger.error("Please verify:")
+                    self.logger.error("1. Bucket name is correct in your .env file")
+                    self.logger.error("2. Service account has Storage Object Admin role")
+                    self.logger.error("3. Bucket exists and is in the correct project")
+                    raise
+                    
+            except Exception as e:
+                self.logger.error(f"Authentication test failed: {e}")
+                raise
+            
+            return client
+            
+        except Exception as e:
+            self.logger.error(f"Failed to authenticate with service account: {e}")
+            raise
         
     def update_global_schema(self, fields: set, field_strategies: Dict[str, str]):
         """Update the global schema with new fields and strategies"""
