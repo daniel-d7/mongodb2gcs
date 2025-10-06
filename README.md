@@ -1,6 +1,6 @@
 # MongoDB to Google Cloud Storage Pipeline
 
-A high-performance pipeline for transferring massive datasets (41+ trillion records) from MongoDB to Google Cloud Storage with parallel processing, progress tracking, and error handling.
+A high-performance pipeline for transferring massive datasets (41+ million records) from MongoDB to Google Cloud Storage with parallel processing, progress tracking, and error handling.
 
 ## Features
 
